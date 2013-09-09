@@ -10,6 +10,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 time_t now, end;
 
@@ -26,17 +28,14 @@ void promptCmdMsg(){
 	const char *homeDir = getenv("HOME");
 	if (getcwd(cwd, sizeof(cwd)) != NULL && homeDir){
 		memmove(cwd, cwd + strlen(homeDir), strlen(cwd+1));
-		printf("~%s >> ", cwd);
+		printf("\n~%s >> ", cwd);
 	}else{
 		errorLogger(1, "getcwd() error");
 	}
 }
 
-void parseCmdLine(){
-
-    
-
-	
+void parseCmdLine(char* cmd){
+		
 }
 
 int main(void){
@@ -44,7 +43,7 @@ int main(void){
 	time(&now);
 	promptWelcomeMsg();
 	while(1){
-		int childPid
+		int childPid, status;
 
 		char *cmd;
 		size_t len = 1024;
@@ -55,6 +54,13 @@ int main(void){
 
 		if((bytesRead = getline(&cmd, &len, stdin)) == -1){
 			errorLogger(1, "Couldn't read command");	
+		}
+		if ((childPid=fork())==0){
+    		printf("Child Process with %u started. Parent Process ID: %u", getpid(), getppid());
+    		parseCmdLine(cmd);
+		}else{ /* avoids error checking*/
+    		//printf("Dont yada yada me, im your parent with pid %u ", getpid());
+    		waitpid(childPid, &status, 0);
 		}
 	}
 	return EXIT_SUCCESS;
