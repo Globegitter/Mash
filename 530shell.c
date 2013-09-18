@@ -21,6 +21,8 @@
 #include <sys/wait.h>
 #include <ctype.h>
 #include <signal.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 //Different colors to print text
 #define CCYAN  "\x1b[36m"
@@ -78,35 +80,21 @@ void promptWelcomeMsg(){
 }
 
 /*
- * Should print current work-directory
+ * Sets the current work-directory, starting with ~ for the home directory
  */
-void promptCmdMsg(){
-	char cwdTemp[LINE_LENGTH];
-	const char *homeDir = getenv("HOME");
-	//printf("GetHomeEnv: %s", homeDir);
-	//printf("Length %d", strlen(homeDir));
-  	//printf("ROOT : %s\n", getenv("ROOT"));
-  	//printf("HOSTNAME : %s\n", getenv("HOSTNAME"));
-  	//printf("CDPATH : %s\n", getenv("CDPATH"));
-	if (getcwd(cwd, sizeof(cwd)) != NULL && homeDir){
-		char* lowerCaseUsername = username;
+void setCwd(){
+	if (getcwd(cwd, sizeof(cwd)) != NULL){
+		char* lowerCaseUsername = malloc(strlen(username) + 1);
+		strcpy(lowerCaseUsername, username);
 		lowerCaseUsername[0] = tolower(lowerCaseUsername[0]);
 		char *s;
-
  		s = strstr(cwd, lowerCaseUsername);
+
  		if (s != NULL){
- 			printf("Found string at index = %d\n", s - cwd + strlen(username));
- 			printf("Length of found string: %i", strlen(s));
- 			printf("%s", s);
- 		}else{
- 			printf("String not found\n");  // `strstr` returns NULL if search string not found
+ 			//Remove every character before up until the home directory and replace it with a ~
+ 			memmove(cwd, cwd + (s - cwd + strlen(username)) - 1, strlen(cwd+1));
+ 			cwd[0] = '~';
  		}
-
-
-		//Seems on Linux there is a small error here.
-		strncpy(cwdTemp, cwd, strlen(cwd));
-		//memmove(cwdTemp, cwdTemp + strlen(homeDir), strlen(cwdTemp+1));
-		printf("\n~%s >> ", cwdTemp);
 	}else{
 		errorLogger(1, "getcwd() error");
 	}
@@ -137,13 +125,17 @@ int parseCmdLine(char* cmd){
 	//Split command/arguments as long as everything is split, or the limit is reached.
 	while (splitCmd != NULL) {
     	splitCmd = strtok_r(NULL, "	 ", &savePtr);
-    	cmdArgs[i] = splitCmd;
-    	i++;
-    	if(i == MAX_ARGS){
-    		errorLogger(1, "Sorry, you can't enter more than 15 arguments. Will try to execute that.");
-    		break;
+    	if(splitCmd != NULL){
+    		if(i < MAX_ARGS - 1){
+    			cmdArgs[i] = splitCmd;
+    			i++;
+    		}else{
+    			errorLogger(1, "Sorry, you can't enter more than 14 arguments. Executing may fail now. \n");
+    			break;
+    		}	
     	}
   	}
+  	cmdArgs[i] = NULL;
   	//If command is succesfully executed, the program will never reach the printf or _exit();
   	execvp(cmdArgs[0], cmdArgs);
   	printf("%s, " CCYAN "%s" CRESET " is unfortunately not a command.\n", username, cmdArgs[0]);
@@ -168,26 +160,25 @@ int main(void){
 	signal(SIGINT, interruptHandler);
 	signal(SIGTSTP, tstpHandler);
 
-	ssize_t bytesRead = 0;
+	//initializes variables for reading line and prompt-message
+	char *line;
+	char mashPrompt[LINE_LENGTH + 3];
 
-	while(bytesRead != -1){
+	//set 'cwd' to the current work directory and set prompt-message
+	setCwd();
+	snprintf(mashPrompt, sizeof(mashPrompt), "%s >> ", cwd);
+
+	//reads lines until EOF is detected, using the GNU readline library
+	while((line = readline(mashPrompt)) != NULL){
 		int status;
-		size_t len = LINE_LENGTH;
 
-		char *line;
-  		line = (char *) malloc (LINE_LENGTH + 1);
-
-  		//prompts the current work-directory before every command
-		promptCmdMsg();
-
-		//Read the current line entered by the user or inputfile
-		if((bytesRead = getline(&line, &len, stdin)) == -1){
-			errorLogger(1, "Could not read command or reached end of file.\n");
-			return EXIT_SUCCESS;	
-		}
-
-		//technically not necessary, but set the last character to end of string.
-		line[strlen(line) - 1] = '\0';
+        //If user presses enter without any character ignore the command
+        if (line[0] != 0){
+        	//saving commant to history, using GNU readline library
+        	add_history(line);
+        }else{
+        	continue;
+        }
 
 		//Forking the child process, which then handles the read line, as well as error handling.
 		if ((childPID=fork())==0){
@@ -207,8 +198,12 @@ int main(void){
 				//Everything succesfully executed; Set childPID to -1, 
 				//so signal-handler functions know there is no child-process running
 				childPID = -1;
+				free(line);
 			}
 		}
+		//Theoretically to check if the user has changed directory. Since cd isn't built in yet, doesn't really have a function
+		setCwd();
+		snprintf(mashPrompt, sizeof(mashPrompt), "%s >> ", cwd);
 	}
 	return EXIT_SUCCESS;
 }
